@@ -53,7 +53,7 @@
 ### 方法一：直接打开
 ```bash
 # 克隆仓库
-git clone https://github.com/你的用户名/2026-newyear.git
+git clone https://github.com/WZY-boop/-Initial-commit-2026-New-Year-particle-effects.git
 
 # 进入目录
 cd 2026-newyear
@@ -281,4 +281,5 @@ git push origin gh-pages
 Made with ❤️ by [WZY-boop]
 
 </div>
+
 
