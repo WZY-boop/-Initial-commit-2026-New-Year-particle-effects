@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>2026 新年快乐 - 极客交互版</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505; /* 深空灰黑，比纯黑更有质感 */
+            font-family: "Microsoft YaHei", sans-serif;
+            touch-action: none; /* 禁止手机下拉刷新 */
+        }
+        canvas {
+            display: block;
+        }
+        /* 启动遮罩层 */
+        #start-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            transition: opacity 0.8s;
+            backdrop-filter: blur(5px);
+        }
+        #start-btn {
+            padding: 15px 40px;
+            font-size: 24px;
+            color: #fff;
+            background: linear-gradient(45deg, #ff3333, #ff9933);
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(255, 80, 80, 0.5);
+            animation: pulse 1.5s infinite;
+            letter-spacing: 2px;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 80, 80, 0.5); }
+            50% { transform: scale(1.05); box-shadow: 0 0 40px rgba(255, 80, 80, 0.8); }
+            100% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 80, 80, 0.5); }
+        }
+        .tips {
+            margin-top: 15px;
+            color: #aaa;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-overlay">
+        <button id="start-btn">开启 2026 新年之旅 🚀</button>
+        <div class="tips">电脑端移动鼠标 • 手机端点击屏幕 互动</div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <audio id="bg-music" loop>
+        <source src="https://music.163.com/song/media/outer/url?id=1387581250.mp3" type="audio/mpeg">
+    </audio>
+
+<script>
+/**
+ * 2026 粒子特效 - 极客升级版
+ * 包含：鼠标斥力场、流光拖尾、星空背景、自适应性能
+ */
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let width, height;
+let particles = [];
+let fireworks = [];
+let stars = [];
+let textTimeline = 0;
+
+// 交互鼠标位置
+const mouse = { x: null, y: null, radius: 100 };
+
+// 配置参数
+const IS_MOBILE = window.innerWidth < 768;
+const PARTICLE_GAP = IS_MOBILE ? 6 : 4; // 手机端减少采样密度
+const PARTICLE_SIZE = IS_MOBILE ? 2.5 : 2; 
+const MOUSE_RADIUS = 120; // 鼠标互动范围
+
+// 文案流程
+const TEXT_LIST = [
+    "✨", "再见 2025", "3", "2", "1",
+    "2026", "新年快乐", "万事胜意", "平安喜乐", "❤️"
+];
+
+// 初始化画布
+function initCanvas() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    createStars(); // 重置星空
+}
+
+// === 星空背景系统 ===
+class Star {
+    constructor() {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        this.size = Math.random() * 1.5;
+        this.blinkSpeed = 0.02 + Math.random() * 0.03;
+        this.alpha = Math.random();
+        this.direction = 1;
+    }
+    update() {
+        this.alpha += this.blinkSpeed * this.direction;
+        if (this.alpha >= 1 || this.alpha <= 0.2) this.direction *= -1;
+    }
+    draw() {
+        ctx.fillStyle = `rgba(255, 255, 255, ${this.alpha})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+function createStars() {
+    stars = [];
+    const count = IS_MOBILE ? 50 : 150;
+    for (let i = 0; i < count; i++) stars.push(new Star());
+}
+
+// === 核心粒子系统 (带物理交互) ===
+class Particle {
+    constructor(x, y, color) {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        this.baseX = x; // 记录目标归位点
+        this.baseY = y;
+        this.targetX = x; 
+        this.targetY = y;
+        this.color = color;
+        this.size = PARTICLE_SIZE;
+        this.density = (Math.random() * 30) + 1; // 用于计算鼠标推力
+        this.ease = 0.05 + Math.random() * 0.05; 
+    }
+
+    update() {
+        // 1. 鼠标交互物理逻辑
+        let dx = mouse.x - this.x;
+        let dy = mouse.y - this.y;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        let forceDirectionX = dx / distance;
+        let forceDirectionY = dy / distance;
+        let maxDistance = mouse.radius;
+        let force = (maxDistance - distance) / maxDistance;
+        let directionX = forceDirectionX * force * this.density;
+        let directionY = forceDirectionY * force * this.density;
+
+        if (distance < mouse.radius) {
+            // 如果鼠标靠近，粒子被推开
+            this.x -= directionX * 5; 
+            this.y -= directionY * 5;
+        } else {
+            // 否则，粒子缓慢回到目标位置 (baseX/baseY 是文字位置)
+            // 这里加入 targetX 是为了支持文字切换时的移动
+            let homeDx = this.targetX - this.x;
+            let homeDy = this.targetY - this.y;
+            this.x += homeDx * this.ease;
+            this.y += homeDy * this.ease;
+        }
+    }
+
+    draw() {
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+// === 烟花系统 (优化拖尾) ===
+class Firework {
+    constructor() {
+        this.x = Math.random() * width;
+        this.y = height;
+        this.targetY = Math.random() * (height / 3);
+        this.speed = 8 + Math.random() * 4;
+        this.angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.3;
+        this.vx = Math.cos(this.angle) * this.speed;
+        this.vy = Math.sin(this.angle) * this.speed;
+        this.hue = Math.random() * 360;
+        this.particles = [];
+        this.exploded = false;
+        this.dead = false;
+    }
+
+    update() {
+        if (!this.exploded) {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.vy += 0.15; // 重力
+            if (this.vy >= 0 || this.y <= this.targetY) this.explode();
+        } else {
+            // 烟花爆炸后的粒子逻辑
+            for (let i = this.particles.length - 1; i >= 0; i--) {
+                let p = this.particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.08; 
+                p.alpha -= 0.015; // 消失速度
+                if (p.alpha <= 0) this.particles.splice(i, 1);
+            }
+            if (this.particles.length === 0) this.dead = true;
+        }
+    }
+
+    explode() {
+        this.exploded = true;
+        // 增加爆炸粒子数量，更华丽
+        const count = IS_MOBILE ? 50 : 100;
+        for (let i = 0; i < count; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            let speed = Math.random() * 4 + 1; // 随机速度层次
+            this.particles.push({
+                x: this.x,
+                y: this.y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                alpha: 1,
+                color: `hsla(${this.hue}, 100%, 60%,` // 更亮的颜色
+            });
+        }
+    }
+
+    draw() {
+        if (!this.exploded) {
+            ctx.fillStyle = `hsl(${this.hue}, 100%, 70%)`;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            for (let p of this.particles) {
+                ctx.fillStyle = p.color + p.alpha + ')';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+}
+
+// === 文字取样逻辑 (支持渐变色) ===
+function getTextCoordinates(text) {
+    const offCanvas = document.createElement('canvas');
+    const offCtx = offCanvas.getContext('2d');
+    offCanvas.width = width;
+    offCanvas.height = height;
+
+    let fontSize = IS_MOBILE ? 50 : 140;
+    offCtx.font = `900 ${fontSize}px "Microsoft YaHei", sans-serif`;
+    offCtx.textAlign = 'center';
+    offCtx.textBaseline = 'middle';
+
+    // 创建文字的流光渐变色
+    const gradient = offCtx.createLinearGradient(0, 0, width, 0);
+    gradient.addColorStop(0, '#ff3333'); // 红
+    gradient.addColorStop(0.5, '#ffd700'); // 金
+    gradient.addColorStop(1, '#ff3333'); // 红
+    offCtx.fillStyle = gradient;
+    
+    offCtx.fillText(text, width / 2, height / 2);
+
+    const imageData = offCtx.getImageData(0, 0, width, height).data;
+    const coords = [];
+    
+    for (let y = 0; y < height; y += PARTICLE_GAP) {
+        for (let x = 0; x < width; x += PARTICLE_GAP) {
+            const index = (y * width + x) * 4;
+            if (imageData[index + 3] > 128) {
+                // 读取像素原本的颜色，实现渐变粒子的效果
+                const r = imageData[index];
+                const g = imageData[index + 1];
+                const b = imageData[index + 2];
+                coords.push({ 
+                    x, 
+                    y, 
+                    color: `rgb(${r},${g},${b})` 
+                });
+            }
+        }
+    }
+    return coords;
+}
+
+function changeText(text) {
+    const coords = getTextCoordinates(text);
+    // 智能重用与补齐
+    for (let i = 0; i < coords.length; i++) {
+        if (i < particles.length) {
+            particles[i].targetX = coords[i].x;
+            particles[i].targetY = coords[i].y;
+            particles[i].baseX = coords[i].x; // 更新归位点
+            particles[i].baseY = coords[i].y;
+            particles[i].color = coords[i].color;
+        } else {
+            // 新产生的粒子从随机位置飞入
+            let p = new Particle(coords[i].x, coords[i].y, coords[i].color);
+            p.x = Math.random() * width;
+            p.y = Math.random() * height;
+            particles.push(p);
+        }
+    }
+    // 多余粒子处理：让它们慢慢消失而不是直接截断
+    if (particles.length > coords.length) {
+        particles.splice(coords.length);
+    }
+}
+
+// === 动画主循环 (关键渲染优化) ===
+function animate() {
+    // 核心特效：使用半透明黑色覆盖，产生长曝光拖尾效果
+    // 0.1 的透明度越低，拖尾越长
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'; 
+    ctx.fillRect(0, 0, width, height);
+
+    // 启用叠加模式，让重叠的粒子发光（Neon Effect）
+    ctx.globalCompositeOperation = 'lighter';
+
+    // 1. 绘制星空
+    stars.forEach(star => { star.update(); star.draw(); });
+
+    // 2. 绘制烟花
+    if (Math.random() < 0.03) fireworks.push(new Firework());
+    for (let i = fireworks.length - 1; i >= 0; i--) {
+        fireworks[i].update();
+        fireworks[i].draw();
+        if (fireworks[i].dead) fireworks.splice(i, 1);
+    }
+
+    // 3. 绘制文字粒子
+    particles.forEach(p => { p.update(); p.draw(); });
+
+    // 恢复默认混合模式
+    ctx.globalCompositeOperation = 'source-over';
+
+    requestAnimationFrame(animate);
+}
+
+// 自动流程
+let step = 0;
+function nextStep() {
+    if (step >= TEXT_LIST.length) step = 5; // 循环祝福语
+    changeText(TEXT_LIST[step]);
+    
+    let duration = 2200;
+    if (["3", "2", "1"].includes(TEXT_LIST[step])) duration = 1200;
+    
+    step++;
+    setTimeout(nextStep, duration);
+}
+
+// === 事件监听 ===
+// 鼠标移动
+window.addEventListener('mousemove', e => {
+    mouse.x = e.x;
+    mouse.y = e.y;
+});
+// 触摸移动 (手机适配)
+window.addEventListener('touchmove', e => {
+    e.preventDefault();
+    mouse.x = e.touches[0].clientX;
+    mouse.y = e.touches[0].clientY;
+}, { passive: false });
+// 鼠标离开
+window.addEventListener('mouseout', () => {
+    mouse.x = undefined;
+    mouse.y = undefined;
+});
+
+window.addEventListener('resize', initCanvas);
+
+// === 启动逻辑 ===
+document.getElementById('start-btn').addEventListener('click', () => {
+    document.getElementById('start-overlay').style.opacity = 0;
+    setTimeout(() => {
+        document.getElementById('start-overlay').style.display = 'none';
+    }, 800);
+    
+    const audio = document.getElementById('bg-music');
+    audio.play().catch(e => console.log("音频播放失败，请检查浏览器权限"));
+    
+    initCanvas();
+    animate();
+    nextStep();
+});
+
+// 初始也是要运行一下，防止黑屏
+initCanvas();
+
+</script>
+</body>
+</html>
